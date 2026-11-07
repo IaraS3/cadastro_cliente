@@ -1,4 +1,5 @@
 import 'package:cadastro_cliente/banco_local.dart';
+import 'package:cadastro_cliente/usuario.dart';
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart'; // Biblioteca do SQLite
 import 'package:path/path.dart'; // Manipula caminho
@@ -29,8 +30,9 @@ class TelaInicial extends StatefulWidget {
 }
 
 class _TelaInicialState extends State<TelaInicial> {
-  final banco = BancoLocal(); // Objeti responsável por SQLITE
-  final id = TextEditingController();
+  final banco = BancoLocal(); // Objeto responsável por SQLITE
+
+  final id = TextEditingController(); // Controla o ID
   final nome = TextEditingController(); // Controla o campo nome
   final email = TextEditingController(); // Controla o campo e-mail
 
@@ -46,31 +48,44 @@ class _TelaInicialState extends State<TelaInicial> {
       return;
     }
 
-    // Envia os dados para o BD
-    await banco.cadastrar(nome.text, email.text);
+    try {
+      // Envia os dados para o BD
+      await banco.cadastrar(nome.text, email.text);
 
-    nome.clear(); // Limpa o campo nome.
-    email.clear(); // Limpa o campo e-mail.
+      nome.clear(); // Limpa o campo nome.
+      email.clear(); // Limpa o campo e-mail.
 
-    setState(() {
-      resultado = 'Usuário cadastrado com SUCESSO!!!';
-    });
+      setState(() {
+        resultado = 'Usuário cadastrado com SUCESSO!!!';
+      });
+    } catch (erro) {
+      // Executo caso ocorra um exceção.
+      print('Erro as cadastrar usuário: $erro');
+
+      setState(() {
+        resultado = 'Não foi possível cadastar o usuário';
+      });
+    }
   }
 
   Future<void> consultarUsuarios() async {
     final usuarios = await banco.listar(); // Busca os registros no BD
 
-    String texto = ''; // Armazena o resultado da consulta
+    try {
+      String texto = ''; // Armazena o resultado da consulta
 
-    // Percorre os usuários encotrados.
-    for (var usuario in usuarios) {
-      texto += '${usuario['id']} - ${usuario['nome']}\n';
-      texto += '${usuario['email']}\n\n';
+      // Percorre os usuários encotrados.
+      for (var usuario in usuarios) {
+        texto += '${usuario['id']} - ${usuario['nome']}\n';
+        texto += '${usuario['email']}\n\n';
+      }
+
+      setState(() {
+        resultado = texto; // Atualiza o texto da tela.
+      });
+    } catch (erro) {
+      print('Operação de consulta finalizada!!!');
     }
-
-    setState(() {
-      resultado = texto; // Atualiza o texto da tela.
-    });
   }
 
   @override
@@ -80,57 +95,78 @@ class _TelaInicialState extends State<TelaInicial> {
     super.dispose(); // Libera o controlador nome
   }
 
-  //Alterar o nome e o email de um usuario
+  // Altera o nome e o e-mail de um usuário
   Future<void> alterarUsuario() async {
-    int? codigo = int.tryParse(id.text); // Converte o id para inteiro
+    try {
+      int? codigo = int.tryParse(id.text); // Conversão do ID para inteiro
 
-    //Verifica os campos necessários
-    if (codigo == null || nome.text.isEmpty || email.text.isEmpty) {
-      setState(() {
-        // Atualiza o texto da tela.
-        resultado = 'Informe um ID válido, nome e e-mail!';
-      });
-      return;
-    }
-
-    // Execute a alteração no SQLite
-    int quantidade = await banco.alterar(codigo, nome.text, email.text);
-    setState(() {
-      if (quantidade > 0) {
-        resultado = 'Usuário alterado com sucesso!';
-      } else {
-        resultado = 'Nenhum usuário encontrado';
+      // Verifica os campos necessários
+      if (codigo == null || nome.text.isEmpty || email.text.isEmpty) {
+        setState(() {
+          resultado = 'Informe um ID válido, nome e e-mail';
+        });
+        return;
       }
-    });
 
-    id.clear();
-    nome.clear();
-    email.clear();
+      // Executa a alteração no SQLite
+      int quantidade = await banco.alterar(codigo, nome.text, email.text);
+
+      setState(() {
+        if (quantidade > 0) {
+          resultado = 'Usuário alterado com SUCESSO!!!';
+        } else {
+          resultado = 'Usuário não encontrado!!!';
+        }
+      });
+
+      id.clear();
+      nome.clear();
+      email.clear();
+    } catch (erro) {
+      print('Erro ao alterar: $erro');
+
+      setState(() {
+        resultado = 'Não foi possível alterar o usuário!!!';
+      });
+    }
   }
 
-  //Excluir um usuario do SQLite
+  // Excluir um usuário do SQLite
   Future<void> excluirUsuario() async {
-    int? codigo = int.tryParse(id.text); // Converte o id para inteiro
+    try {
+      int? codigo = int.tryParse(id.text); //Converte o ID
 
-    //Verifica se o campo id foi preenchido corretamente
-    if (codigo == null) {
-      setState(() {
-        resultado = 'Informe um ID válido!';
-      });
-      return;
-    }
-
-    // Execute a exclusão no SQLite
-    int quantidade = await banco.excluir(codigo);
-    setState(() {
-      if (quantidade > 0) {
-        resultado = 'Usuário excluído com sucesso!';
-      } else {
-        resultado = 'Usuário não encontrado';
+      // Simulação de erro
+      if (codigo == 999) {
+        throw Exception('Isto é uma falha simulada!!!');
       }
-    });
 
-    id.clear(); // Limpa somenteo campo id
+      // Verifica de o ID foi informado corretamente
+      if (codigo == null) {
+        setState(() {
+          resultado = 'Informe um ID válido!!!';
+        });
+        return;
+      }
+
+      int quantidade = await banco.excluir(codigo);
+
+      setState(() {
+        if (quantidade > 0) {
+          resultado = 'Usuário excluído com sucesso!!!';
+        } else {
+          resultado = 'Usuário não encontrado!!!';
+        }
+      });
+
+      id.clear(); // Limpa somente o campo ID
+    } catch (erro) {
+      print('Erro ao excluir: $erro');
+
+      setState(() {
+        resultado = ('Não foi possível excluir o usuário');
+      });
+    }
   }
 
   @override
@@ -145,12 +181,12 @@ class _TelaInicialState extends State<TelaInicial> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
 
           children: [
-            // Campo para digitar o id.
+            // Campo para digitar o ID.
             TextField(
               controller: id,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'ID do usuário (para alterar ou excluir)',
+                labelText: 'ID do usuário (Alterar ou excluir)',
               ),
             ),
 
@@ -160,7 +196,7 @@ class _TelaInicialState extends State<TelaInicial> {
               decoration: const InputDecoration(labelText: 'Nome'),
             ),
 
-            // Campo para digitar o nome.
+            // Campo para digitar o e-mail.
             TextField(
               controller: email,
               decoration: InputDecoration(labelText: 'E-mail'),
@@ -168,28 +204,28 @@ class _TelaInicialState extends State<TelaInicial> {
 
             const SizedBox(height: 20),
 
-            // Botão cadastro (Sem funcionalidade)
+            // Botão cadastro
             ElevatedButton(
               onPressed: cadastrarUsuario,
               child: const Text('Cadastrar'),
             ),
 
-            // Botão Consultar (Sem funcionalidade).
+            // Botão Consultar
             ElevatedButton(
               onPressed: consultarUsuarios,
               child: const Text('Consultar usuários'),
             ),
 
-            // Botão Alterar (Sem funcionalidade).
+            // Botão para alterar (Ainda sem funcionalidade)
             ElevatedButton(
               onPressed: alterarUsuario,
               child: const Text('Alterar usuário'),
             ),
 
-            // Botão excluir (Sem funcionalidade).
+            // Botão para Excluir (Ainda sem funcionalidade)
             ElevatedButton(
               onPressed: excluirUsuario,
-              child: const Text('Excluir usuário'),
+              child: const Text('Excluir Usuário'),
             ),
 
             const SizedBox(height: 20),
