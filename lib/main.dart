@@ -49,8 +49,13 @@ class _TelaInicialState extends State<TelaInicial> {
     }
 
     try {
+      // cria um objeto da classe Usuario
+      Usuario usuario = Usuario(nome: nome.text, email: email.text);
+
       // Envia os dados para o BD
-      await banco.cadastrar(nome.text, email.text);
+      await banco.cadastrar(usuario);
+
+      if (!mounted) return; // Verifica se a tela ainda está ativa
 
       nome.clear(); // Limpa o campo nome.
       email.clear(); // Limpa o campo e-mail.
@@ -65,25 +70,34 @@ class _TelaInicialState extends State<TelaInicial> {
       setState(() {
         resultado = 'Não foi possível cadastar o usuário';
       });
+    } finally {
+      // Executa COM OU SEM EXCEÇÃO.
+      print('Operação de cadastro finalizada!!!');
     }
   }
 
   Future<void> consultarUsuarios() async {
-    final usuarios = await banco.listar(); // Busca os registros no BD
-
     try {
+      //Busca uma lista de objetos
+      List<Usuario> usuarios = await banco.lista();
+
+      if (!mounted) return; // Verifica se a tela ainda está ativa
+
       String texto = ''; // Armazena o resultado da consulta
 
       // Percorre os usuários encotrados.
       for (var usuario in usuarios) {
-        texto += '${usuario['id']} - ${usuario['nome']}\n';
-        texto += '${usuario['email']}\n\n';
+        texto += '${usuario.id} - ${usuario.nome}\n';
+        texto += '${usuario.email}\n\n';
       }
 
       setState(() {
         resultado = texto; // Atualiza o texto da tela.
       });
     } catch (erro) {
+      print('Operação de consulta finalizada!!!');
+    } finally {
+      // Executa COM OU SEM EXCEÇÃO.
       print('Operação de consulta finalizada!!!');
     }
   }
@@ -128,6 +142,9 @@ class _TelaInicialState extends State<TelaInicial> {
       setState(() {
         resultado = 'Não foi possível alterar o usuário!!!';
       });
+    } finally {
+      // Executa COM OU SEM EXCEÇÃO.
+      print('Operação de alteração finalizada!!!');
     }
   }
 
@@ -166,6 +183,9 @@ class _TelaInicialState extends State<TelaInicial> {
       setState(() {
         resultado = ('Não foi possível excluir o usuário');
       });
+    } finally {
+      // Executa COM OU SEM EXCEÇÃO.
+      print('Operação de exclusão finalizada!!!');
     }
   }
 

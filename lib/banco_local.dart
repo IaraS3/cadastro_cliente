@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart'; // Biblioteca do SQLite
 import 'package:path/path.dart'; //Manipula caminho
+import 'package:cadastro_cliente/usuario.dart';
 
 class BancoLocal {
   Database? banco; //Guardando a conexão com o BD
@@ -29,17 +30,37 @@ class BancoLocal {
   }
 
   // Cadastro de um novo usuario
-  Future<void> cadastrar(String nome, String email) async {
+  Future<void> cadastrar(Usuario usuario) async {
     final db = await abrirBanco();
 
-    await db.insert('usuarios', {'nome': nome, 'email': email});
+    await db.insert('usuarios', usuario.paraMap());
   }
 
-  //Consulta todos os usuários cadastrados
-  // Future<List<Map<String, Object?>>> listar() async{
-  Future<List> listar() async {
-    final db = await abrirBanco();
-    return await db.query('usuarios');
+  //-Consulta todos os usuários cadastrados
+  //- Future<List<Map<String, Object?>>> listar() async{
+  // Future<List> listar() async {
+  //   final db = await abrirBanco();
+  //   return await db.query('usuarios');
+  // }
+
+  Future<List<Usuario>> lista() async {
+    final db = await abrirBanco(); //Obtem o banco
+
+    //Consulta os registros na tabela usuarios
+    final registros = await db.query('usuarios');
+
+    // Cria uma lista vazia de objetos (tabela usuários()
+    List<Usuario> usuarios = [];
+
+    //Percorre os registros retornados pelo sqlite
+    for(var registro in registros) {
+      // Converte o Map de um objeto.
+      Usuario usuario = Usuario.doMap(registro);
+
+      // Adiciona o objeto na lista
+      usuarios.add(usuario);
+    }
+    return usuarios;
   }
 
   // Alterar o nome e o email de um usuario
