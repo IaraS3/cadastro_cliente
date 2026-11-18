@@ -53,7 +53,7 @@ class _TelaInicialState extends State<TelaInicial> {
 
     // Enviar o objeto para a classe responsável pela validação
     // Retornar uma mensagem de erro ou null
-    String? erroValidacao = ValidadorUsario.validaUsuario(usuario);
+    String? erroValidacao = ValidadorUsuario.validaUsuario(usuario);
 
 
     // Verifica de existe algum erro de validação
@@ -136,7 +136,7 @@ class _TelaInicialState extends State<TelaInicial> {
     int? codigo = int.tryParse(id.text.trim());
 
     // Valida se o ID é um número inteiro e maior que zero
-    if (codigo == null || !ValidadorUsario.validaId(codigo)) {
+    if (codigo == null || !ValidadorUsuario.validaId(codigo)) {
       
       setState(() {
         resultado = 'Informe um ID válido!!!';
@@ -154,7 +154,7 @@ class _TelaInicialState extends State<TelaInicial> {
     );
 
     // Valida o nome e e-mail
-    String? erroValidacao = ValidadorUsario.validaUsuario(usuario);
+    String? erroValidacao = ValidadorUsuario.validaUsuario(usuario);
 
     // Verifica se existe algum erro de validação
     if (erroValidacao != null) {
@@ -238,7 +238,7 @@ class _TelaInicialState extends State<TelaInicial> {
     // Converter o ID digitado para inteiro
     int? codigo = int.tryParse(id.text.trim());
 
-    if (!ValidadorUsario.validaId(codigo)) {
+    if (!ValidadorUsuario.validaId(codigo)) {
       setState(() {
           resultado = 'Informe um ID válido!!!';
       });

@@ -1,7 +1,7 @@
 import 'usuario.dart'; // Import Classe Usuario
 
 // Classe responsável pelas validações do usuário
-class ValidadorUsario {
+class ValidadorUsuario {
   
   // Valida o nome do usuário
   static bool validarNome(String nome) {
