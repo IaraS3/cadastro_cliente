@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart'; // Biblioteca do SQLite
 import 'package:path/path.dart'; // Manipula caminho
 import 'validador_usuario.dart'; // Manipulo o objeto validador
+import 'endereco.dart'; // Classe Endereco
 
 void main() {
   runApp(const MeuAplicativo()); // Inicia o app
@@ -274,6 +275,114 @@ class _TelaInicialState extends State<TelaInicial> {
       });
     } finally {
       print('Operação de pesquisa finalizada');
+    }
+  }
+
+  Future<void> cadastrarEndereco() async {
+    int? codigo = int.tryParse(id.text.trim());
+
+    // Verifica se o ID é valido
+    if (!ValidadorUsuario.validaId(codigo)){
+      setState(() {
+        resultado = 'Informe um ID de usuário válido!!!';
+      });
+      return;
+    }
+
+    try {
+
+      // Consulta o usuário para verificar se ele existe
+      Usuario? usuario = await banco.buscaPorId(codigo!);
+
+      if (!mounted) return;
+
+      // Verifica se o usuário foi encontrado
+      if (usuario == null) {
+        setState(() {
+          resultado = 'Usuário não encontrado! Cadastre o usuário.';
+        });
+
+        return; // Impedir o cadastro do endereço
+      }
+
+      // Criar um Objeto Endereco
+      Endereco endereco = Endereco(
+        usuarioId: codigo, // ID Informado na interface
+        logradouro: 'Rua Ramiro Colleoni', // logradouro fixo
+        numero: 110, // numero fixo
+        cidade: 'Santo André', // Cidade fixa
+        );
+
+      // Envia o objeto Endereço para o SQLite
+      await banco.cadastrarEndereco(endereco);
+
+      if (!mounted) return;
+
+      // Exibe os dados cadastrados
+      setState(() {
+        resultado = 'Endereço cadastrado com SUCESSO!!!\n\n'
+                    'Usuário: ${usuario.nome}\n'
+                    'Logradouro: ${endereco.logradouro}\n'
+                    'Numero: ${endereco.numero}\n'
+                    'Cidade: ${endereco.cidade}';
+      });
+    } catch (erro) {
+      // Exibe o erro no console
+      print('Erro ao cadastrar endereço: $erro');
+
+      if (!mounted) return;
+      setState(() {
+        resultado = 'Não foi possível cadastrar o Endereço!!!';
+      });
+
+    } finally {
+      // Executando com ou sem exceção
+      print('Operação de cadastrado finalizada!!!')      ;
+   }
+  }
+
+  // Consultar os usuários e seus respectivos endereços.
+  Future<void> consultarUsuariosEnderecos() async {
+
+  try {
+      // Executa a consulta INNER JOIN no SQLite
+      List<Map<String, Object?>> registros = 
+        await banco.consultarUsuarioEndereco();
+
+      if (!mounted) return;
+
+      String texto = ''; // Armazena o resultado da consulta
+
+      // Percorre os registros encontrados
+      for (var registro in registros) {
+        // Exibe os daods da tabela usuário e endereços
+        texto += 'Usuário: ${registro['nome']}\n';
+        texto += 'E-mail: ${registro['email']}\n';
+        texto += 'Logradouro: ${registro['logradouro']}\n';
+        texto += 'Número: ${registro['numero']}\n';
+        texto += 'Cidade: ${registro['cidade']}\n';
+      }
+
+      // Verifica se existem registros
+      if (registros.isEmpty) {
+        texto = 'Nenhum endereço Cadastrado';
+      }
+
+      // Exibe os dados encontrados
+      setState(() {
+        resultado = texto;
+      });
+    } catch (erro) {
+      // Exibe o erro no console
+      print('Erro ao consultar endereços: $erro');
+
+      if (!mounted) return;
+      setState(() {
+        resultado = 'Não foi possivel consultar os endereços';
+      });
+    } finally {
+      // Executado com ou sem exceçãp
+      print('Operação de consulta de endereços Finalizada!!!');
     }
   }
 

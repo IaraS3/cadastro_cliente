@@ -1,13 +1,14 @@
 import 'package:sqflite/sqflite.dart'; // Biblioteca do SQLite
 import 'package:path/path.dart'; // Manipula caminho
-
 import 'usuario.dart'; // Importa a classe Usuario
-import 'endereco.dart'; //Importa a classe Endereco
+import 'endereco.dart'; // Importa a classe Endereco
 
 class BancoLocal {
+
   Database? banco; // Guardando a conexão com o BD
 
   Future<Database> abrirBanco() async {
+
     // Reutiliza a conexão se o banco já estiver aberto.
     if (banco != null && banco!.isOpen) {
       return banco!;
@@ -15,68 +16,72 @@ class BancoLocal {
 
     String pasta = await getDatabasesPath(); // Pasta do banco de dados
     String arquivo = join(pasta, 'cadastro.db'); // Nome e local do arquivo
-
+    
     banco = await openDatabase(
       arquivo, // Caminho completo do BD
       version: 2, // Versão Atual do BD
-      //Habilitar a verificação de chave estrangeira
+
+      // Habilitar a verificação de chave estrangeira
       onConfigure: (db) async {
         await db.execute('PRAGMA foreing_keys = ON');
       },
 
       onCreate: (db, version) async {
-        await db.execute('''CREATE TABLE usuarios (
+          await db.execute('''CREATE TABLE usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE
           )
          ''');
 
-        //Cria a tabela enderecos
+        // Cria a tabela enderecos
         await db.execute('''
-            CREATE TABLE enderecos (
+          CREATE TABLE enderecos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            logradouro TEXT NOT NULL,
+            numero INTEGER NOT NULL,
+            cidade TEXT NOT NULL,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+          )
+        ''');
+        },
+
+ 
+        //ONUPGRADE: Atualiza o banco da versão 1 para a 2
+        onUpgrade: (db, versaoAntiga, versaoNova) async {
+
+          // Verifica se o banco ainda está na versão 1
+          if (versaoAntiga < 2) {
+            // Crio a tabela endereço sem apagar a tabela usuario (usuários)
+            await db.execute('''
+             CREATE TABLE enderecos (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               usuario_id INTEGER NOT NULL,
-              logadouro TEXT NOT NULL,
+              logradouro TEXT NOT NULL,
               numero INTEGER NOT NULL,
               cidade TEXT NOT NULL,
-              FOREING KEY  (usuario) REFERENCES usuarios(id)
-            )
-          ''');
-      },
-
-      // ONUPGRAD: Atualiza o banco da versão 1 para a 2.
-      onUpgrade: (db, versaoAntiga, versaoNova) async {
-        
-        //Verifica se o banco ainda está na versão 1
-        if (versaoAntiga < 2) {
-          //Crio a tabela endereço sem apagar a tabela usuario ()
-          await db.execute('''
-              CREATE TABLE enderecos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                usuario_id INTEGER NOT NULL,
-                logradouro TEXT NOT NULL,
-                numero INTEGER NOT NULL,
-                cidade TEXT NOT NULL,
-                FOREING KEY  (usuario) REFERENCES usuarios(id)
-              )
+              FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+             )
             ''');
+          }
         }
-      },
-    );
-
+      );
+     
     return banco!; //Retorna a conexão aberta
   }
 
   // Cadastro de um novo usuário
   Future<void> cadastrar(Usuario usuario) async {
+
     final db = await abrirBanco();
 
-    await db.insert('usuarios', usuario.paraMap());
+        await db.insert('usuarios', usuario.paraMap(),);
   }
 
   // Consulta todos os usuários cadastrados
   Future<List<Usuario>> lista() async {
+
     final db = await abrirBanco(); // Obtém o banco
 
     // Consulta os registro na tabela usuários.
@@ -99,14 +104,15 @@ class BancoLocal {
 
   // Altera o nome e o e-mail de um usuário
   Future<int> alterar(int id, String nome, String email) async {
+
     final db = await abrirBanco(); // Obtém o banco
 
     return await db.update(
       'usuarios', // Tabela que será alterada
       {
-        'nome': nome, // Novo Nome
-        'email': email, // Novo e-mail
-      },
+        'nome':nome, // Novo Nome
+        'email': email // Novo e-mail
+      }, 
       where: 'id = ?', // Condição WHERE
       whereArgs: [id], // Valor utilizado na condição
     );
@@ -114,6 +120,7 @@ class BancoLocal {
 
   // Exclui um usuário pelo ID
   Future<int> excluir(int id) async {
+
     final db = await abrirBanco(); // Obtém banco
 
     return await db.delete(
@@ -125,65 +132,67 @@ class BancoLocal {
 
   // Pesquisa de um usuário pelo ID
   Future<Usuario?> buscaPorId(int id) async {
+    
     // Abre o BD
     final db = await abrirBanco();
 
     // Consulta o registro
     // exemplo: select * from usuarios where id = ???
     final registros = await db.query(
-      'usuarios',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-
-    // Verificação de encontrou algum registro
-    if (registros.isEmpty) {
-      return null;
-    }
-
-    // Converter o registro encontrado em um objeto para manipução
-    return Usuario.doMap(registros.first);
+          'usuarios', 
+          where: 'id = ?',
+          whereArgs: [id],
+         );
+      
+      // Verificação de encontrou algum registro
+      if (registros.isEmpty) {
+        return null;
+      }
+      
+      // Converter o registro encontrado em um objeto para manipução
+      return Usuario.doMap(registros.first);
   }
 
-  //Cadastrar um endereço relacionado a um usuario
+  // Cadastrar um endereço relacionado a um usuario
   Future<void> cadastrarEndereco(Endereco endereco) async {
-    final db = await abrirBanco(); //Obtém o BD
+    final db = await abrirBanco(); // Obtém o BD
 
-    //Insere o endereço utilizando o objeto convertido em MAP
+    // Insere o endereço utilizando o objeto convertido em MAP
     await db.insert(
-      'enderecos',
-      endereco.paraMap(), //Converte o objeto Endereço em MAP
-    );
+        'enderecos',
+        endereco.paraMap(), // Converte o objeto Endereço em MAP
+      );
   }
 
-  //Consultar todos os endereços cadastrados
+  // Consultar todos os endereços cadastrados
   Future<List<Endereco>> listarEnderecos() async {
-    final db = await abrirBanco(); //Obtém o db
+    final db = await abrirBanco(); // Obtém o DB
 
-    //Consulta os registros da tabela endereços
-    final registros = await db.query('enderecos');
+    // Consulta os registros da tabela endereços
+    final regitros = await db.query('enderecos');
 
-    //Cria uma lista vazia de objetos
+    // Cria uma lista vazia de objetos
     List<Endereco> enderecos = [];
 
-    //Percore os registros retornados pelo SQLite
-    for (var registro in registros) {
-      //Converte o MAP em um objeto Endereco
+    // Percorre os registros retornado pelo SQLite
+    for (var registro in regitros) {
+
+      // Converte o MAP em um Objeto Endereco
       Endereco endereco = Endereco.doMap(registro);
 
-      //Adiciona o objeto na lista
+      // Adiciona o objeto na lista
       enderecos.add(endereco);
     }
-    //Retorna todos os endereços cadastrados
+    // Retorna todos os endereços encontrados
     return enderecos;
   }
 
-  //Consulta de usuários e seus respectivos endereços
-  Future<List<Map<String, Object?>>> consultarUsuarioEndereco() async {
-    final db = await abrirBanco(); // o btém o BD
+  // Consulta de usuários e seus respectivos endereços
+  Future<List<Map<String, Object?>>> consultarUsuarioEndereco() async{
+    final db = await abrirBanco(); // Obtém BD
 
-    //Executa um SELECT relacionado as duas tabelas
-    final registros = await db.rawQuery('''sql
+    // Executa um SELECT relacionando as duas tabelas
+    final registros = await db.rawQuery('''
       SELECT
         usuarios.id AS usuario_id,
         usuarios.nome,
@@ -198,7 +207,9 @@ class BancoLocal {
       ORDER BY usuarios.nome
     ''');
 
-    //Retorna os registros encontrados
+    // Retorna os registros encontrados'
     return registros;
   }
+
 }
+ 
