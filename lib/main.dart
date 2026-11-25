@@ -1,32 +1,34 @@
 import 'package:cadastro_cliente/banco_local.dart';
 import 'package:cadastro_cliente/usuario.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart'; // Biblioteca do SQLite
-import 'package:path/path.dart'; // Manipula caminho
-import 'validador_usuario.dart'; // Manipulo o objeto validador
+import 'package:flutter/services.dart'; // Filtro de digitação (CEP)
+import 'package:sqflite/sqflite.dart'; // databaseFactory
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart'; // SQLite no Chrome
+import 'validador_usuario.dart'; // Validador
 import 'endereco.dart'; // Classe Endereco
 
 void main() {
-  runApp(const MeuAplicativo()); // Inicia o app
+  // No Chrome o SQLite precisa da fábrica web
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
+  runApp(const MeuAplicativo());
 }
 
-// Classe principal do APP.
 class MeuAplicativo extends StatelessWidget {
-
   const MeuAplicativo({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: TelaInicial(), // Primeira tela.
-    ); // Material App
+      home: TelaInicial(),
+    );
   }
 }
 
-// Tela de Cadastro e consulta
 class TelaInicial extends StatefulWidget {
-
   const TelaInicial({super.key});
 
   @override
@@ -34,440 +36,353 @@ class TelaInicial extends StatefulWidget {
 }
 
 class _TelaInicialState extends State<TelaInicial> {
+  final banco = BancoLocal();
 
-  final banco = BancoLocal(); // Objeto responsável por SQLITE
+  // Controladores do usuário
+  final id = TextEditingController();
+  final nome = TextEditingController();
+  final email = TextEditingController();
 
-  final id = TextEditingController(); // Controla o ID
-  final nome = TextEditingController(); // Controla o campo nome
-  final email = TextEditingController(); // Controla o campo e-mail
+  // Controladores do endereço
+  final cep = TextEditingController();
+  final logradouro = TextEditingController();
+  final numero = TextEditingController();
+  final cidade = TextEditingController();
 
-  String resultado = ''; // Mensagem exibida na tela
+  String resultado = '';
 
-  // Cadastra um usuário no SQLite
-  Future<void> cadastrarUsuario() async {
+  // Exibe o CEP no formato 00000-000
+  String _formatarCep(Object? valor) {
+    final digitos = (valor ?? '').toString().replaceAll(RegExp(r'\D'), '');
+    if (digitos.length == 8) {
+      return '${digitos.substring(0, 5)}-${digitos.substring(5)}';
+    }
+    return digitos;
+  }
 
-    // Cria um objeto Usuario com dados da tela.
-    Usuario usuario = Usuario(
-      nome: nome.text.trim(), // Remove os espaços do ínicio e do fim da variável nome
-      email: email.text.trim().toLowerCase(), // Remove espaços externos e converte o email para minusculo
+  // ---------- Auxiliares ----------
+
+  void _mostrar(String mensagem) {
+    if (!mounted) return;
+    setState(() {
+      resultado = mensagem;
+    });
+  }
+
+  // Lê o ID da tela. Retorna null se for inválido.
+  int? _lerId() {
+    final codigo = int.tryParse(id.text.trim());
+    if (codigo == null || !ValidadorUsuario.validaId(codigo)) {
+      return null;
+    }
+    return codigo;
+  }
+
+  // Monta o usuário com os dados tratados da tela
+  Usuario _montarUsuario({int? codigo}) {
+    return Usuario(
+      id: codigo,
+      nome: nome.text.trim(),
+      email: email.text.trim().toLowerCase(),
     );
+  }
 
-    // Enviar o objeto para a classe responsável pela validação
-    // Retornar uma mensagem de erro ou null
-    String? erroValidacao = ValidadorUsuario.validaUsuario(usuario);
+  void _limparCampos() {
+    id.clear();
+    nome.clear();
+    email.clear();
+    cep.clear();
+    logradouro.clear();
+    numero.clear();
+    cidade.clear();
+  }
 
+  // ---------- Cadastro (usuário + endereço) ----------
 
-    // Verifica de existe algum erro de validação
+  Future<void> cadastrarUsuario() async {
+    final usuario = _montarUsuario();
+
+    // 1) Valida usuário
+    final erroValidacao = ValidadorUsuario.validaUsuario(usuario);
     if (erroValidacao != null) {
+      _mostrar(erroValidacao);
+      return;
+    }
 
-      setState(() {
-        resultado = erroValidacao; //Exibe a mensagem de erro
-      });
+    // 2) Valida endereço (antes de gravar qualquer coisa)
+    final cepDigitos = cep.text.replaceAll(RegExp(r'\D'), '');
+    final rua = logradouro.text.trim();
+    final numeroEnd = int.tryParse(numero.text.trim());
+    final cid = cidade.text.trim();
 
-      return; // Encerro o método sem acessar o BD
+    if (cepDigitos.length != 8) {
+      _mostrar('Informe um CEP válido com 8 números!!!');
+      return;
+    }
+    if (rua.isEmpty) {
+      _mostrar('Informe o logradouro!!!');
+      return;
+    }
+    if (numeroEnd == null || numeroEnd <= 0) {
+      _mostrar('Informe um número válido!!!');
+      return;
+    }
+    if (cid.isEmpty) {
+      _mostrar('Informe a cidade!!!');
+      return;
     }
 
     try {
-      
-      // Cria um objeto da classe Usuario
-      Usuario usuario = Usuario(nome: nome.text, email: email.text,);
-      
-      // Envia os dados para o BD
+      // 3) Grava o usuário
       await banco.cadastrar(usuario);
 
-      if (!mounted) return;
+      // 4) Descobre o ID do usuário recém-criado (o maior ID da tabela)
+      final usuarios = await banco.lista();
+      final novo = usuarios.reduce((a, b) => (a.id ?? 0) > (b.id ?? 0) ? a : b);
 
-      nome.clear(); // Limpa o campo nome.
-      email.clear(); // Limpa o campo e-mail.
+      // 5) Grava o endereço ligado a esse usuário
+      final endereco = Endereco(
+        usuarioId: novo.id!,
+        cep: cepDigitos,
+        logradouro: rua,
+        numero: numeroEnd,
+        cidade: cid,
+      );
+      await banco.cadastrarEndereco(endereco);
 
-      setState(() {
-        resultado = 'Usuário cadastrado com SUCESSO!!!';
-      });
+      _limparCampos();
+
+      _mostrar('Cadastro realizado com SUCESSO!!!\n\n'
+          'ID: ${novo.id}\n'
+          'Nome: ${novo.nome}\n'
+          'E-mail: ${novo.email}\n'
+          'CEP: ${_formatarCep(cepDigitos)}\n'
+          'Logradouro: ${endereco.logradouro}\n'
+          'Número: ${endereco.numero}\n'
+          'Cidade: ${endereco.cidade}');
     } catch (erro) {
-
-      // Executo caso ocorra um exceção.
-      print('Erro as cadastrar usuário: $erro');
-
-      setState(() {
-        resultado = 'Não foi possível cadastar o usuário';
-      });
+      debugPrint('Erro ao cadastrar: $erro');
+      _mostrar('Não foi possível concluir o cadastro');
     } finally {
-      // Executado com ou sem exceção.
-      print('Operação de inserção finalizada!!!');
+      debugPrint('Operação de cadastro finalizada!!!');
     }
   }
 
+  // ---------- Consultas ----------
+
+  // Lista usuários com seus endereços
   Future<void> consultarUsuarios() async {
-    
     try {
-      
-      // Busca uma lista de objetos
-      List<Usuario> usuarios = await banco.lista();
+      final registros = await banco.consultarUsuarioEndereco();
 
-      if (!mounted) return;
-      
-      String texto = ''; // Armazena o resultado da consulta
-
-      // Percorre os usuários encotrados.
-      for (var usuario in usuarios) {
-        texto += '${usuario.id} - ${usuario.nome}\n';
-        texto += '${usuario.email}\n\n';
+      if (registros.isEmpty) {
+        _mostrar('Nenhum usuário cadastrado');
+        return;
       }
 
-      setState(() {
-        resultado = texto; // Atualiza o texto da tela.
-      });
+      final texto = StringBuffer();
+      for (final registro in registros) {
+        texto.writeln('Nome: ${registro['nome']}');
+        texto.writeln('E-mail: ${registro['email']}');
+        texto.writeln('CEP: ${_formatarCep(registro['cep'])}');
+        texto.writeln('Logradouro: ${registro['logradouro']}');
+        texto.writeln('Número: ${registro['numero']}');
+        texto.writeln('Cidade: ${registro['cidade']}\n');
+      }
+
+      _mostrar(texto.toString());
     } catch (erro) {
-      print('Operação de consulta finalizada!!!');
-    } 
-  } 
+      debugPrint('Erro ao consultar: $erro');
+      _mostrar('Não foi possível consultar os usuários');
+    } finally {
+      debugPrint('Operação de consulta finalizada!!!');
+    }
+  }
+
+  Future<void> buscarUsuario() async {
+    final codigo = _lerId();
+    if (codigo == null) {
+      _mostrar('Informe um ID válido!!!');
+      return;
+    }
+
+    try {
+      final usuario = await banco.buscaPorId(codigo);
+
+      if (usuario == null) {
+        _mostrar('Usuário não encontrado!!!');
+        return;
+      }
+
+      _mostrar('${usuario.id} - ${usuario.nome}\n${usuario.email}');
+    } catch (erro) {
+      debugPrint('Erro ao buscar: $erro');
+      _mostrar('Não foi possível buscar o ID');
+    } finally {
+      debugPrint('Operação de pesquisa finalizada');
+    }
+  }
+
+  // ---------- Alterar e excluir ----------
+
+  Future<void> alterarUsuario() async {
+    final codigo = _lerId();
+    if (codigo == null) {
+      _mostrar('Informe um ID válido!!!');
+      return;
+    }
+
+    final usuario = _montarUsuario(codigo: codigo);
+
+    final erroValidacao = ValidadorUsuario.validaUsuario(usuario);
+    if (erroValidacao != null) {
+      _mostrar(erroValidacao);
+      return;
+    }
+
+    try {
+      final quantidade =
+          await banco.alterar(codigo, usuario.nome, usuario.email);
+
+      id.clear();
+      nome.clear();
+      email.clear();
+
+      _mostrar(quantidade > 0
+          ? 'Usuário alterado com SUCESSO!!!'
+          : 'Usuário não encontrado!!!');
+    } catch (erro) {
+      debugPrint('Erro ao alterar: $erro');
+      _mostrar('Não foi possível alterar o usuário!!!');
+    }
+  }
+
+  Future<void> excluirUsuario() async {
+    final codigo = _lerId();
+    if (codigo == null) {
+      _mostrar('Informe um ID válido!!!');
+      return;
+    }
+
+    try {
+      final quantidade = await banco.excluir(codigo);
+
+      id.clear();
+
+      _mostrar(quantidade > 0
+          ? 'Usuário excluído com sucesso!!!'
+          : 'Usuário não encontrado!!!');
+    } catch (erro) {
+      debugPrint('Erro ao excluir: $erro');
+      _mostrar('Não foi possível excluir o usuário');
+    }
+  }
+
+  // ---------- Ciclo de vida ----------
 
   @override
   void dispose() {
-    nome.dispose(); // Libera o controlador nome
-    email.dispose(); // Libera o controlador nome
-    super.dispose(); // Libera o controlador nome
+    id.dispose();
+    nome.dispose();
+    email.dispose();
+    cep.dispose();
+    logradouro.dispose();
+    numero.dispose();
+    cidade.dispose();
+    super.dispose();
   }
 
-  // Altera o nome e o e-mail de um usuário
-  Future<void> alterarUsuario() async {
-
-    // Remove espaço externo e tentar converte o ID para int
-    // Caso não seja possível a conversão, retorna null
-    int? codigo = int.tryParse(id.text.trim());
-
-    // Valida se o ID é um número inteiro e maior que zero
-    if (codigo == null || !ValidadorUsuario.validaId(codigo)) {
-      
-      setState(() {
-        resultado = 'Informe um ID válido!!!';
-      });
-
-      return; // Encerra o método se o ID for inválido
-    }
-
-    // Cria um objeto Usuario com os novos dados
-    Usuario usuario = Usuario(
-      
-      id: codigo, // ID do usuário que será alterado
-      nome: nome.text.trim(), //Remove espaços externos
-      email: email.text.trim().toLowerCase(), // Padroniza o e-mail 
-    );
-
-    // Valida o nome e e-mail
-    String? erroValidacao = ValidadorUsuario.validaUsuario(usuario);
-
-    // Verifica se existe algum erro de validação
-    if (erroValidacao != null) {
-      setState(() {
-        resultado = erroValidacao; // Exibe a mensagem de erro
-      });
-      return; //Encerra o método sem alterar o banco
-    }
-    
-    try { 
-
-        // Executa a alteração no SQLite
-        int quantidade = await banco.alterar(codigo, nome.text, email.text);
-
-        if (!mounted) return;
-
-        setState(() {
-          if (quantidade > 0) {
-            resultado = 'Usuário alterado com SUCESSO!!!';
-          } else {
-            resultado = 'Usuário não encontrado!!!';
-          }
-        });
-
-        id.clear();
-        nome.clear();
-        email.clear();
-    } catch (erro) {
-
-      print('Erro ao alterar: $erro');
-
-      setState(() {
-        resultado = 'Não foi possível alterar o usuário!!!';
-      });
-    }
-  }
-
-  // Excluir um usuário do SQLite
-  Future<void> excluirUsuario() async {
-    
-    try {
-            
-      int? codigo = int.tryParse(id.text); //Converte o ID
-
-      // Simulação de erro
-      if (codigo == 999) {
-        throw Exception('Isto é uma falha simulada!!!');
-      }
-
-      // Verifica de o ID foi informado corretamente
-      if (codigo == null) {
-        setState(() {
-          resultado =  'Informe um ID válido!!!';
-        });
-        return;
-      }
-
-      int quantidade = await banco.excluir(codigo);
-
-      setState(() {
-          if (quantidade > 0) {
-            resultado = 'Usuário excluído com sucesso!!!';
-          } else {
-            resultado = 'Usuário não encontrado!!!';
-          }
-      });
-
-      id.clear(); // Limpa somente o campo ID
-    } catch (erro) {
-      print('Erro ao excluir: $erro');
-
-      setState(() {
-        resultado = ('Não foi possível excluir o usuário');
-      });
-    }
-  }
-
-  // Pesquisa de um usuário pelo ID
-  Future<void> buscarUsuario() async {
-
-    // Converter o ID digitado para inteiro
-    int? codigo = int.tryParse(id.text.trim());
-
-    if (!ValidadorUsuario.validaId(codigo)) {
-      setState(() {
-          resultado = 'Informe um ID válido!!!';
-      });
-      return;
-    }
-
-    try {
-
-      // Consulta o usuário no SQLite
-      Usuario? usuario = await banco.buscaPorId(codigo!);
-
-      if (!mounted) return;
-
-      // Verifica se encontrou o resultado
-      if (usuario == null) {
-        setState(() {
-          resultado = 'Usuário não encontrado!!!';
-        });
-        return;
-      }
-
-      // Exibe os dados do usuário encontrado
-      setState(() {
-        resultado = '${usuario.id} - ${usuario.nome}\n'
-                    '${usuario.email}';
-
-      });
-    } catch (erro) {
-      if (!mounted) return;
-      
-      setState(() {
-        resultado = 'Não foi possível buscar o ID';
-      });
-    } finally {
-      print('Operação de pesquisa finalizada');
-    }
-  }
-
-  Future<void> cadastrarEndereco() async {
-    int? codigo = int.tryParse(id.text.trim());
-
-    // Verifica se o ID é valido
-    if (!ValidadorUsuario.validaId(codigo)){
-      setState(() {
-        resultado = 'Informe um ID de usuário válido!!!';
-      });
-      return;
-    }
-
-    try {
-
-      // Consulta o usuário para verificar se ele existe
-      Usuario? usuario = await banco.buscaPorId(codigo!);
-
-      if (!mounted) return;
-
-      // Verifica se o usuário foi encontrado
-      if (usuario == null) {
-        setState(() {
-          resultado = 'Usuário não encontrado! Cadastre o usuário.';
-        });
-
-        return; // Impedir o cadastro do endereço
-      }
-
-      // Criar um Objeto Endereco
-      Endereco endereco = Endereco(
-        usuarioId: codigo, // ID Informado na interface
-        logradouro: 'Rua Ramiro Colleoni', // logradouro fixo
-        numero: 110, // numero fixo
-        cidade: 'Santo André', // Cidade fixa
-        );
-
-      // Envia o objeto Endereço para o SQLite
-      await banco.cadastrarEndereco(endereco);
-
-      if (!mounted) return;
-
-      // Exibe os dados cadastrados
-      setState(() {
-        resultado = 'Endereço cadastrado com SUCESSO!!!\n\n'
-                    'Usuário: ${usuario.nome}\n'
-                    'Logradouro: ${endereco.logradouro}\n'
-                    'Numero: ${endereco.numero}\n'
-                    'Cidade: ${endereco.cidade}';
-      });
-    } catch (erro) {
-      // Exibe o erro no console
-      print('Erro ao cadastrar endereço: $erro');
-
-      if (!mounted) return;
-      setState(() {
-        resultado = 'Não foi possível cadastrar o Endereço!!!';
-      });
-
-    } finally {
-      // Executando com ou sem exceção
-      print('Operação de cadastrado finalizada!!!')      ;
-   }
-  }
-
-  // Consultar os usuários e seus respectivos endereços.
-  Future<void> consultarUsuariosEnderecos() async {
-
-  try {
-      // Executa a consulta INNER JOIN no SQLite
-      List<Map<String, Object?>> registros = 
-        await banco.consultarUsuarioEndereco();
-
-      if (!mounted) return;
-
-      String texto = ''; // Armazena o resultado da consulta
-
-      // Percorre os registros encontrados
-      for (var registro in registros) {
-        // Exibe os daods da tabela usuário e endereços
-        texto += 'Usuário: ${registro['nome']}\n';
-        texto += 'E-mail: ${registro['email']}\n';
-        texto += 'Logradouro: ${registro['logradouro']}\n';
-        texto += 'Número: ${registro['numero']}\n';
-        texto += 'Cidade: ${registro['cidade']}\n';
-      }
-
-      // Verifica se existem registros
-      if (registros.isEmpty) {
-        texto = 'Nenhum endereço Cadastrado';
-      }
-
-      // Exibe os dados encontrados
-      setState(() {
-        resultado = texto;
-      });
-    } catch (erro) {
-      // Exibe o erro no console
-      print('Erro ao consultar endereços: $erro');
-
-      if (!mounted) return;
-      setState(() {
-        resultado = 'Não foi possivel consultar os endereços';
-      });
-    } finally {
-      // Executado com ou sem exceçãp
-      print('Operação de consulta de endereços Finalizada!!!');
-    }
-  }
+  // ---------- Interface ----------
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-
-      appBar: AppBar(
-        title: const Text('Cadastro de usuários'),
-      ),
-
-      body: Padding(
+      appBar: AppBar(title: const Text('Cadastro de usuários')),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
-
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
-        
-        children: [
-
-          // Campo para digitar o ID.
-          TextField(
-            controller: id,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'ID do usuário (Alterar ou excluir)',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: id,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'ID (somente para alterar, excluir ou buscar)',
+              ),
             ),
-          ),
-
-          // Campo para digitar o nome.
-          TextField(
-            controller: nome,
-            decoration: const InputDecoration(
-              labelText: 'Nome',
+            TextField(
+              controller: nome,
+              decoration: const InputDecoration(labelText: 'Nome'),
             ),
-          ),
-
-          // Campo para digitar o e-mail.
-          TextField(
-            controller: email,
-            decoration: InputDecoration(
-              labelText: 'E-mail',
+            TextField(
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'E-mail'),
             ),
-          ),
+            TextField(
+              controller: cep,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly, // só números
+                LengthLimitingTextInputFormatter(8), // máximo 8 dígitos
+              ],
+              decoration: const InputDecoration(
+                labelText: 'CEP',
+                hintText: 'Somente números. Ex.: 09210000',
+              ),
+            ),
+            TextField(
+              controller: logradouro,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Logradouro',
+                hintText: 'Ex.: Av. Paulista, Rua das Flores, Estrada do Mar',
+              ),
+            ),
+            TextField(
+              controller: numero,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Número'),
+            ),
+            TextField(
+              controller: cidade,
+              decoration: const InputDecoration(labelText: 'Cidade'),
+            ),
 
-          const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-        // Botão cadastro 
-        ElevatedButton(
-          onPressed: cadastrarUsuario,
-          child: const Text('Cadastrar'),
-        ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton(
+                  onPressed: cadastrarUsuario,
+                  child: const Text('Cadastrar'),
+                ),
+                ElevatedButton(
+                  onPressed: consultarUsuarios,
+                  child: const Text('Consultar usuários'),
+                ),
+                ElevatedButton(
+                  onPressed: alterarUsuario,
+                  child: const Text('Alterar usuário'),
+                ),
+                ElevatedButton(
+                  onPressed: excluirUsuario,
+                  child: const Text('Excluir usuário'),
+                ),
+                ElevatedButton(
+                  onPressed: buscarUsuario,
+                  child: const Text('Buscar por ID'),
+                ),
+              ],
+            ),
 
-        // Botão Consultar 
-        ElevatedButton(
-          onPressed: consultarUsuarios,
-          child: const Text('Consultar usuários'),
-        ),
+            const SizedBox(height: 20),
 
-        // Botão para alterar (Ainda sem funcionalidade)
-        ElevatedButton(
-          onPressed: alterarUsuario,
-           child: const Text('Alterar usuário'),
-        ),
-
-        // Botão para Excluir (Ainda sem funcionalidade)
-        ElevatedButton(
-          onPressed: excluirUsuario,
-           child: const Text('Excluir Usuário'),
-        ),
-
-        // Botão para Excluir (Ainda sem funcionalidade)
-        ElevatedButton(
-          onPressed: buscarUsuario,
-           child: const Text('Busca por ID'),
-        ),
-
-        const SizedBox(height: 20),
-
-          // Espaço reservado para exibir os resultados
-          Expanded(
-            child: SingleChildScrollView(
-              child: Text(resultado),
-            ),  
-          ),
-         ],
+            // Resultado
+            Text(resultado),
+          ],
         ),
       ),
     );
